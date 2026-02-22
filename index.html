@@ -91,7 +91,7 @@
         <th>Data</th>
         <th>Dia da semana</th>
         <th>Trabalho/Folga</th>
-        <th>Sim/Não</th>
+        <th>Fim de semana</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -316,7 +316,7 @@
           const extra = m ? (m.badgeText.includes("feriado") ? ` — FERIADO: ${m.title}` : ` — ${m.title}`) : "";
 
           document.getElementById("resultado").textContent =
-            `📅 ${data} (${dia}) → ${status}, Sim/Não: ${simnao}${extra}`;
+            `📅 ${data} (${dia}) → ${status}, Fim de semana: ${simnao}${extra}`;
           encontrado = true;
           break;
         }
@@ -348,5 +348,6 @@
 </body>
 </html>
 ``
+
 
 
