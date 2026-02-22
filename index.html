@@ -1,29 +1,25 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<link rel="manifest" href="manifest.json">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Escala 3x3">
-<link rel="apple-touch-icon" href="icon.png">
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Escala 3x3 Automática</title>
+
+  <!-- PWA / Apple -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Escala 3x3">
+  <link rel="apple-touch-icon" href="icon.png">
+
   <style>
     body { font-family: Arial, sans-serif; margin: 10px; }
     h1 { font-size: 1.4em; text-align: center; }
 
     .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 10px;
-      justify-content: center;
+      display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; justify-content: center;
     }
     .controls label { font-size: 0.9em; }
-    .controls input, .controls select, .controls button {
-      padding: 6px;
-      font-size: 0.9em;
-    }
+    .controls input, .controls select, .controls button { padding: 6px; font-size: 0.9em; }
 
     table { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 0.85em; }
     th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
@@ -32,36 +28,37 @@
     #resultado { margin-top: 10px; font-weight: bold; text-align: center; }
 
     /* Cores da escala */
-    .work { background: #fff9e6; }   /* leve amarelo para trabalho */
-    .off  { background: #eaffea; }   /* leve verde para folga */
-    .highlight { background: #ffff99 !important; } /* amarelo forte para folga em dia Sim */
-    .past { color: #888; text-decoration: line-through; } /* cinza e riscado para dias passados */
-    .today { background: #99ccff !important; font-weight: bold; } /* azul para o dia atual */
+    .work { background: #fff9e6; }   /* trabalho */
+    .off  { background: #eaffea; }   /* folga  */
+    .highlight { background: #ffff99 !important; } /* folga em sábado/domingo */
+    .past { color: #888; text-decoration: line-through; }
+    .today { background: #99ccff !important; font-weight: bold; }
 
-    /* Responsividade */
+    /* Etiquetas de feriado/ponto facultativo no "Dia da semana" */
+    td.dow-holiday-nac { color: #c51616; font-weight: bold; }               /* nacional */
+    td.dow-holiday-mun { color: #7c1133; font-weight: bold; }               /* municipal (vinho) */
+    td.dow-facultativo { color: #555; font-weight: bold; }                  /* ponto facultativo (cinza escuro) */
+
+    .badge {
+      font-size: 0.68em; margin-left: 6px; vertical-align: middle; opacity: 0.95;
+      font-weight: normal; border-radius: 10px; padding: 1px 6px; border: 1px solid transparent;
+    }
+    .badge-nac { color: #c51616; border-color: #f1c1c1; background: #fff5f5; }
+    .badge-mun { color: #7c1133; border-color: #e0b7c6; background: #fff6f9; }
+    .badge-pf  { color: #555;     border-color: #d7d7d7; background: #fafafa; }
+
+    /* Se o dia já passou, mantém o risco mas preserva a cor da célula */
+    tr.past td.dow-holiday-nac,
+    tr.past td.dow-holiday-mun,
+    tr.past td.dow-facultativo { text-decoration: line-through; }
+
+    /* Responsivo */
     @media (max-width: 600px) {
-      table, thead, tbody, th, td, tr {
-        display: block;
-      }
-      thead tr {
-        display: none; /* esconde cabeçalho em telas pequenas */
-      }
-      tr {
-        margin-bottom: 10px;
-        border: 1px solid #ccc;
-        padding: 6px;
-        border-radius: 6px;
-      }
-      td {
-        border: none;
-        text-align: left;
-        padding: 4px;
-      }
-      td::before {
-        font-weight: bold;
-        display: inline-block;
-        width: 120px;
-      }
+      table, thead, tbody, th, td, tr { display: block; }
+      thead tr { display: none; }
+      tr { margin-bottom: 10px; border: 1px solid #ccc; padding: 6px; border-radius: 6px; }
+      td { border: none; text-align: left; padding: 4px; }
+      td::before { font-weight: bold; display: inline-block; width: 120px; }
       td:nth-child(1)::before { content: "Data: "; }
       td:nth-child(2)::before { content: "Dia da semana: "; }
       td:nth-child(3)::before { content: "Status: "; }
@@ -101,30 +98,134 @@
   </table>
 
   <script>
+    // === BASE DA ROTAÇÃO 3x3 ===
     const BASE_INICIO = new Date(2025, 10, 22); // 22/11/2025
 
+    // === Utils ===
     function formatarData(d) {
       const dia = String(d.getDate()).padStart(2, '0');
       const mes = String(d.getMonth() + 1).padStart(2, '0');
       const ano = d.getFullYear();
       return `${dia}/${mes}/${ano}`;
     }
-
     function diaSemanaLabel(idx) {
       const nomes = ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"];
       return nomes[idx];
     }
+    function addDias(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+    function mesmaData(d1, d2) {
+      return d1.getFullYear() === d2.getFullYear() &&
+             d1.getMonth() === d2.getMonth() &&
+             d1.getDate() === d2.getDate();
+    }
 
+    // === Cálculo da Páscoa (gregoriano) ===
+    function pascoaDomingo(ano) {
+      const a = ano % 19;
+      const b = Math.floor(ano / 100);
+      const c = ano % 100;
+      const d = Math.floor(b / 4);
+      const e = b % 4;
+      const f = Math.floor((b + 8) / 25);
+      const g = Math.floor((b - f + 1) / 3);
+      const h = (19*a + b - d - g + 15) % 30;
+      const i = Math.floor(c / 4);
+      const k = c % 4;
+      const l = (32 + 2*e + 2*i - h - k) % 7;
+      const m = Math.floor((a + 11*h + 22*l) / 451);
+      const mes = Math.floor((h + l - 7*m + 114) / 31); // 3=Mar, 4=Abr
+      const dia = ((h + l - 7*m + 114) % 31) + 1;
+      return new Date(ano, mes - 1, dia);
+    }
+
+    // === Regras rotação 3x3 ===
     function statusPorRotacao(data) {
       const msPorDia = 24 * 60 * 60 * 1000;
       const diffDias = Math.floor((data - BASE_INICIO) / msPorDia);
       const mod6 = ((diffDias % 6) + 6) % 6;
       return mod6 <= 2 ? "Trabalho" : "Folga";
     }
-
     function simOuNao(data) {
       const dw = data.getDay();
       return (dw === 0 || dw === 6) ? "Sim" : "Não";
+    }
+
+    // === Feridos nacionais (fixos + Sexta-Feira Santa) ===
+    function feriadoNacionalInfo(data) {
+      const mapaFixos = {
+        "0-1":  "Confraternização Universal",
+        "3-21": "Tiradentes",
+        "4-1":  "Dia do Trabalhador",
+        "8-7":  "Independência do Brasil",
+        "9-12": "Nossa Senhora Aparecida",
+        "10-2": "Finados",
+        "10-15":"Proclamação da República",
+        "10-20":"Consciência Negra",
+        "11-25":"Natal"
+      };
+      const chave = `${data.getMonth()}-${data.getDate()}`;
+      if (mapaFixos[chave]) return { is: true, name: mapaFixos[chave], scope: "nac" };
+
+      const pascoa = pascoaDomingo(data.getFullYear());
+      const sextaSanta = addDias(pascoa, -2);
+      if (mesmaData(data, sextaSanta)) return { is: true, name: "Paixão de Cristo", scope: "nac" };
+
+      return { is: false };
+    }
+
+    // === Pontos facultativos (Portaria federal 2026) ===
+    // Obs.: usados como referência visual apenas; não são feriado nacional.
+    function pontoFacultativoInfo(data) {
+      const y = data.getFullYear();
+      // Carnaval (seg/ter) e Quarta de Cinzas (até 14h)
+      // Em 2026: 16 (seg), 17 (ter), 18 (qua até 14h)
+      const pf2026 = [
+        "1-16", "1-17", "1-18", // fev
+        "3-20",                // 20/abr (véspera de Tiradentes)
+        "5-4",  "5-5",         // 4/6 Corpus Christi (qui) e 5/6 (sex)
+        "11-24", "11-31"       // 24/12 e 31/12 (após 13h)
+      ];
+      // Se quiser compatibilizar outros anos, você pode expandir uma tabela por ano aqui.
+      const chave = `${data.getMonth()}-${data.getDate()}`;
+      if (y === 2026 && pf2026.includes(chave)) {
+        let name = "";
+        if (chave === "1-16") name = "Carnaval (ponto facultativo)";
+        else if (chave === "1-17") name = "Carnaval (ponto facultativo)";
+        else if (chave === "1-18") name = "Quarta-feira de Cinzas (até 14h)";
+        else if (chave === "3-20") name = "Véspera de Tiradentes (ponto facultativo)";
+        else if (chave === "5-4")  name = "Corpus Christi (ponto facultativo)";
+        else if (chave === "5-5")  name = "Ponto facultativo";
+        else if (chave === "11-24") name = "Véspera de Natal (ponto facultativo)";
+        else if (chave === "11-31") name = "Véspera de Ano-Novo (ponto facultativo)";
+        return { is: true, name };
+      }
+      return { is: false };
+    }
+
+    // === Feriados municipais – Nova Lima/MG ===
+    function feriadoMunicipalInfo(data) {
+      // 15/08 e 08/12
+      const chave = `${data.getMonth()}-${data.getDate()}`;
+      const mapa = {
+        "7-15":  "Assunção de Nossa Senhora (Municipal)",
+        "11-8":  "Imaculada Conceição (Municipal)"
+      };
+      if (mapa[chave]) return { is: true, name: mapa[chave], scope: "mun" };
+      return { is: false };
+    }
+
+    function marcadorDeDia(data) {
+      // Prioridade: Feriado nacional > Feriado municipal > Ponto facultativo
+      const infoN = feriadoNacionalInfo(data);
+      if (infoN.is) return { className: "dow-holiday-nac", badgeClass: "badge badge-nac", badgeText: "feriado (nacional)", title: infoN.name };
+
+      const infoM = feriadoMunicipalInfo(data);
+      if (infoM.is) return { className: "dow-holiday-mun", badgeClass: "badge badge-mun", badgeText: "feriado (municipal)", title: infoM.name };
+
+      const infoPF = pontoFacultativoInfo(data);
+      if (infoPF.is) return { className: "dow-facultativo", badgeClass: "badge badge-pf", badgeText: "ponto facultativo", title: infoPF.name };
+
+      return null;
     }
 
     function gerarTabela(ano) {
@@ -135,26 +236,30 @@
         const ultimoDia = new Date(ano, mes + 1, 0).getDate();
         for (let dia = 1; dia <= ultimoDia; dia++) {
           const data = new Date(ano, mes, dia);
-          const labelSemana = diaSemanaLabel(data.getDay());
-          const dataFmt = formatarData(data);
 
+          const dataFmt = formatarData(data);
+          const labelSemana = diaSemanaLabel(data.getDay());
           const status = statusPorRotacao(data);
           const simnao = simOuNao(data);
 
           let classe = status === "Trabalho" ? "work" : "off";
-          if (status === "Folga" && simnao === "Sim") {
-            classe = "highlight";
-          }
+          if (status === "Folga" && simnao === "Sim") classe = "highlight";
 
-          const linha = document.createElement("tr");
-          linha.className = classe;
-          linha.innerHTML = `
+          const mark = marcadorDeDia(data);
+          const dowClass = mark ? mark.className : "";
+          const dowHTML  = mark
+            ? `${labelSemana} <span class="${mark.badgeClass}" title="${mark.title}">${mark.badgeText}</span>`
+            : labelSemana;
+
+          const tr = document.createElement("tr");
+          tr.className = classe;
+          tr.innerHTML = `
             <td>${dataFmt}</td>
-            <td>${labelSemana}</td>
+            <td class="${dowClass}">${dowHTML}</td>
             <td>${status}</td>
             <td>${simnao}</td>
           `;
-          tbody.appendChild(linha);
+          tbody.appendChild(tr);
         }
       }
     }
@@ -181,7 +286,7 @@
       });
 
       if (linhaHoje) {
-        linhaHoje.scrollIntoView({behavior: "smooth", block: "center"});
+        linhaHoje.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
 
@@ -203,8 +308,15 @@
           const dia = linha.cells[1].textContent;
           const status = linha.cells[2].textContent;
           const simnao = linha.cells[3].textContent;
+
+          // Indica se é feriado ou ponto facultativo no resultado
+          const [dd, mm, aaaa] = data.split("/");
+          const d = new Date(parseInt(aaaa), parseInt(mm)-1, parseInt(dd));
+          const m = marcadorDeDia(d);
+          const extra = m ? (m.badgeText.includes("feriado") ? ` — FERIADO: ${m.title}` : ` — ${m.title}`) : "";
+
           document.getElementById("resultado").textContent =
-            `📅 ${data} (${dia}) → ${status}, Sim/Não: ${simnao}`;
+            `📅 ${data} (${dia}) → ${status}, Sim/Não: ${simnao}${extra}`;
           encontrado = true;
           break;
         }
@@ -215,60 +327,24 @@
       }
     }
 
-    atualizarTabela();
+    function inicializarAno() {
+      const hoje = new Date();
+      const anoAtual = hoje.getFullYear();
+      const seletor = document.getElementById("ano");
+
+      if (anoAtual > 2025) {
+        for (let i = 0; i < seletor.options.length; i++) {
+          if (seletor.options[i].value === "2025") { seletor.remove(i); break; }
+        }
+        seletor.value = String(anoAtual);
+      } else {
+        seletor.value = "2025";
+      }
+      atualizarTabela();
+    }
+
+    document.addEventListener("DOMContentLoaded", inicializarAno);
   </script>
 </body>
 </html>
-<script>
-  function inicializarAno() {
-    const hoje = new Date();
-    const anoAtual = hoje.getFullYear();
-    const seletor = document.getElementById("ano");
-
-    // Se já passou de 2025, remove 2025 do seletor
-    if (anoAtual > 2025) {
-      for (let i = 0; i < seletor.options.length; i++) {
-        if (seletor.options[i].value === "2025") {
-          seletor.remove(i);
-          break;
-        }
-      }
-      seletor.value = anoAtual; // abre direto no ano atual (ex: 2026)
-    } else {
-      seletor.value = 2025; // força abrir em 2025
-    }
-
-    atualizarTabela();
-  }
-
-  // Chame essa função em vez de atualizarTabela direto
-  inicializarAno();
-</script>
-<script>
-  const BASE_INICIO = new Date(2025, 10, 22); // 22/11/2025
-
-  // ... todas as funções (formatarData, gerarTabela, marcarDiasPassados, etc.)
-
-  function inicializarAno() {
-    const hoje = new Date();
-    const anoAtual = hoje.getFullYear();
-    const seletor = document.getElementById("ano");
-
-    if (anoAtual > 2025) {
-      for (let i = 0; i < seletor.options.length; i++) {
-        if (seletor.options[i].value === "2025") {
-          seletor.remove(i);
-          break;
-        }
-      }
-      seletor.value = anoAtual; 
-    } else {
-      seletor.value = "2025"; 
-    }
-
-    atualizarTabela();
-  }
-
-  // Executa só depois que o HTML estiver pronto
-  document.addEventListener("DOMContentLoaded", inicializarAno);
-</script>
+``
